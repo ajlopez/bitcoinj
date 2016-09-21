@@ -358,6 +358,8 @@ public abstract class AbstractBlockChain {
             return added;
         }
 
+        added.add(block);
+
         if (this.addedOrphans != null) {
             added.addAll(this.addedOrphans);
             this.addedOrphans = null;
