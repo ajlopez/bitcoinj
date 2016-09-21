@@ -83,6 +83,9 @@ public abstract class AbstractBlockChain {
     /** Keeps a map of block hashes to StoredBlocks. */
     private final BlockStore blockStore;
 
+    /** List of orphan blocks added when a block is added to the blockchain */
+    private List<Block> addedOrphans;
+
     /**
      * Tracks the top of the best known chain.<p>
      *
@@ -340,6 +343,28 @@ public abstract class AbstractBlockChain {
      * for a FullPrunedBlockChain blockStore.getOnceUndoableStoredBlock(hash)
      */
     protected abstract StoredBlock getStoredBlockInCurrentScope(Sha256Hash hash) throws BlockStoreException;
+
+    /**
+     * Processes a received block and tries to add it to the chain. If there's something wrong with the block an
+     * exception is thrown. If the block is OK but cannot be connected to the chain at this time, returns false.
+     * If the block can be connected to the chain, returns the block and any orphan that was added.
+     * Accessing block's transactions in another thread while this method runs may result in undefined behavior.
+     */
+    public List<Block> addBlocks(Block block) throws VerificationException, PrunedException {
+        List<Block> added = new ArrayList<Block>();
+        this.addedOrphans = null;
+
+        if (!add(block)) {
+            return added;
+        }
+
+        if (this.addedOrphans != null) {
+            added.addAll(this.addedOrphans);
+            this.addedOrphans = null;
+        }
+
+        return added;
+    }
 
     /**
      * Processes a received block and tries to add it to the chain. If there's something wrong with the block an
@@ -901,6 +926,8 @@ public abstract class AbstractBlockChain {
      * For each block in orphanBlocks, see if we can now fit it on top of the chain and if so, do so.
      */
     private void tryConnectingOrphans() throws VerificationException, BlockStoreException, PrunedException {
+        this.addedOrphans = new ArrayList<Block>();
+
         checkState(lock.isHeldByCurrentThread());
         // For each block in our orphan list, try and fit it onto the head of the chain. If we succeed remove it
         // from the list and keep going. If we changed the head of the list at the end of the round try again until
@@ -924,7 +951,11 @@ public abstract class AbstractBlockChain {
                 // Otherwise we can connect it now.
                 // False here ensures we don't recurse infinitely downwards when connecting huge chains.
                 log.info("Connected orphan {}", orphanBlock.block.getHash());
-                add(orphanBlock.block, false, orphanBlock.filteredTxHashes, orphanBlock.filteredTxn);
+
+                if (add(orphanBlock.block, false, orphanBlock.filteredTxHashes, orphanBlock.filteredTxn)) {
+                    this.addedOrphans.add(orphanBlock.block);
+                }
+
                 iter.remove();
                 blocksConnectedThisRound++;
             }

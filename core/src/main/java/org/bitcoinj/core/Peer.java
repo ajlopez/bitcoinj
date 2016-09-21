@@ -693,9 +693,13 @@ public class Peer extends PeerSocketHandler {
                         log.info("Lost download peer status, throwing away downloaded headers.");
                         return;
                     }
-                    if (blockChain.add(header)) {
+
+                    List<Block> added = blockChain.addBlocks(header);
+
+                    if (!added.isEmpty()) {
                         // The block was successfully linked into the chain. Notify the user of our progress.
-                        invokeOnBlocksDownloaded(header, null);
+                        for (Block b: added)
+                            invokeOnBlocksDownloaded(b, null);
                     } else {
                         // This block is unconnected - we don't know how to get from it back to the genesis block yet.
                         // That must mean that the peer is buggy or malicious because we specifically requested for
@@ -986,9 +990,13 @@ public class Peer extends PeerSocketHandler {
         pendingBlockDownloads.remove(m.getHash());
         try {
             // Otherwise it's a block sent to us because the peer thought we needed it, so add it to the block chain.
-            if (blockChain.add(m)) {
+            List<Block> added = blockChain.addBlocks(m);
+
+            if (!added.isEmpty()) {
                 // The block was successfully linked into the chain. Notify the user of our progress.
-                invokeOnBlocksDownloaded(m, null);
+                for (Block b: added) {
+                    invokeOnBlocksDownloaded(b, null);
+                }
             } else {
                 // This block is an orphan - we don't know how to get from it back to the genesis block yet. That
                 // must mean that there are blocks we are missing, so do another getblocks with a new block locator
